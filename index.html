@@ -6,9 +6,34 @@
     <title>Танцующие фото - Подарок</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050b1a; }
+        /* Минимальный ненавязчивый индикатор, что нужно нажать (можно удалить) */
+        .tap-hint {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.6);
+            font-family: sans-serif;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 100;
+            background: rgba(0,0,0,0.5);
+            padding: 5px;
+            backdrop-filter: blur(5px);
+            width: fit-content;
+            margin: 0 auto;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+        @media (max-width: 600px) {
+            .tap-hint { font-size: 12px; bottom: 10px; }
+        }
     </style>
 </head>
 <body>
+    <div class="tap-hint">🎵 Нажми на экран, чтобы включить музыку</div>
+
     <script type="importmap">
         {
             "imports": {
@@ -42,9 +67,7 @@
         ];
         const audioUrl = "resources/music.mp3";
         const cakeModelPath = "resources/cake.glb";
-        
-        // 🖼️ СВОЯ КАРТИНКА ДЛЯ БИЛЛБОРДА (положи в папку resources)
-        const billboardImageUrl = "resources/V_Billboard.png";   // <--- ЗАМЕНИ НА СВОЙ ФАЙЛ
+        const billboardImageUrl = "resources/V_Billboard.png";
 
         // ============================================================
         // 2️⃣ ГЕНЕРАЦИЯ 30 ОБЪЕКТОВ
@@ -144,7 +167,7 @@
         scene.add(stars);
 
         // ============================================================
-        // 4️⃣ ВСПОМОГАТЕЛЬНЫЕ ПЕРЕМЕННЫЕ
+        // 4️⃣ ПЕРЕМЕННЫЕ ДЛЯ АУДИО И ОБЪЕКТОВ
         // ============================================================
         let meshes = [];
         let loadedTextures = [];
@@ -155,18 +178,17 @@
         let billboard = null;
 
         // ============================================================
-        // 5️⃣ ЗАГРУЗКА ТЕКСТУРЫ ДЛЯ БИЛЛБОРДА (из твоей картинки)
+        // 5️⃣ ТЕКСТУРА БИЛЛБОРДА (из вашего изображения)
         // ============================================================
         function loadBillboardTexture(callback) {
             new THREE.TextureLoader().load(billboardImageUrl,
                 (texture) => {
-                    console.log("✅ Текстура биллборда загружена:", billboardImageUrl);
+                    console.log("✅ Текстура биллборда загружена");
                     callback(texture);
                 },
                 undefined,
                 (err) => {
-                    console.error("❌ Не удалось загрузить картинку для биллборда, будет стандартный текст", err);
-                    // Запасной вариант: создаём canvas с текстом
+                    console.error("❌ Не удалось загрузить картинку, создаём текст", err);
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.width = 512;
@@ -269,10 +291,12 @@
         }
 
         // ============================================================
-        // 7️⃣ АУДИО И АНАЛИЗ БАСА
+        // 7️⃣ АУДИО С ПРИНУДИТЕЛЬНЫМ РАЗБЛОКИРОВАНИЕМ ДЛЯ МОБИЛЬНЫХ
         // ============================================================
         async function initAudio() {
-            if (audioContext) await audioContext.close();
+            if (audioContext) {
+                await audioContext.close();
+            }
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyserNode = audioContext.createAnalyser();
             analyserNode.fftSize = 256;
@@ -287,14 +311,31 @@
 
         async function startMusic() {
             if (isMusicPlaying) return;
-            if (!audioContext) await initAudio();
-            if (audioContext.state === 'suspended') await audioContext.resume();
+            if (!audioContext) {
+                await initAudio();
+            }
+            // Важно: сначала активируем AudioContext
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
             try {
                 await audioElement.play();
                 isMusicPlaying = true;
                 console.log("🎵 Музыка играет");
+                // Убираем подсказку после запуска
+                const hint = document.querySelector('.tap-hint');
+                if (hint) hint.style.opacity = '0';
             } catch(e) {
-                console.warn("Автовоспроизведение заблокировано, нажми ещё раз", e);
+                console.warn("Не удалось запустить музыку:", e);
+                // Повторная попытка при следующем касании
+                isMusicPlaying = false;
+            }
+        }
+
+        // Глобальный обработчик, который будет вызываться при каждом касании, пока музыка не запустится
+        async function onUserTap() {
+            if (!isMusicPlaying) {
+                await startMusic();
             }
         }
 
@@ -369,26 +410,24 @@
             animate();
         });
         loadCakeModel();
-
-        // Загружаем текстуру для биллборда и после загрузки добавляем его
         loadBillboardTexture((texture) => {
             addBillboard(texture);
         });
 
+        // Инициализируем аудио, но не запускаем
         initAudio().catch(e => console.warn(e));
-        function onFirstTouch() {
-            startMusic();
-            window.removeEventListener('click', onFirstTouch);
-            window.removeEventListener('touchstart', onFirstTouch);
-        }
-        window.addEventListener('click', onFirstTouch);
-        window.addEventListener('touchstart', onFirstTouch);
+
+        // Добавляем обработчики касания для мобильных (и клики для десктопа)
+        window.addEventListener('click', onUserTap);
+        window.addEventListener('touchstart', onUserTap);
+
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-        console.log("Сцена готова, нажми на экран для музыки");
+
+        console.log("Сцена готова, нажми на экран для запуска музыки");
     </script>
 </body>
 </html>
